@@ -1,0 +1,31 @@
+{
+  "name": "@wrdhrd/excel-stream",
+  "version": "1.0.0",
+  "description": "wrdhrd's zero-memory-leak, multi-tab streaming Excel compiler.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "excel",
+    "stream",
+    "xlsx",
+    "wrdhrd",
+    "backpressure"
+  ],
+  "author": "WrdHrd Technologies Private Limited",
+  "license": "MIT",
+  "dependencies": {
+    "archiver": "7.0.0"
+  },
+  "devDependencies": {
+    "@types/archiver": "6.0.2",
+    "@types/node": "20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
