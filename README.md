@@ -5,6 +5,7 @@ Engineered by wrdhrd to handle massive datasets without crashing the V8 heap.
 
 ## Installation
 
+
 \`\`\`bash
 npm install @wrdhrd/excel-stream
 \`\`\`
