@@ -8,6 +8,8 @@ export interface CellStyle {
   color?: string;
   bgColor?: string;
   align?: "left" | "center" | "right";
+  wrapText?: boolean;
+  border?: boolean;
 }
 
 export interface CellData {
@@ -21,6 +23,7 @@ export class WrdhrdExcelStream {
   private currentSheetStream: PassThrough | null = null;
   private currentMerges: string[] = [];
   private currentRow: number = 1;
+  private colWidths: Map<number, number> = new Map();
 
   private fonts: string[] = [`<font><sz val="11"/><name val="Calibri"/></font>`];
   private fills: string[] = [
@@ -29,6 +32,10 @@ export class WrdhrdExcelStream {
   ];
   private cellXfs: string[] = [`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`];
   private styleMap: Map<string, number> = new Map();
+  private borders: string[] = [
+    `<border><left/><right/><top/><bottom/><diagonal/></border>`, // Index 0: No border
+    `<border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>`, // Index 1: Thin border
+  ];
 
   constructor(outputStream: Writable) {
     this.archive = archiver("zip", { zlib: { level: 9 } });
@@ -97,16 +104,20 @@ export class WrdhrdExcelStream {
       );
     }
 
+    const borderId = style.border ? 1 : 0;
+
     let alignmentXml = "";
     let applyAlignment = 0;
-    if (style.align) {
-      alignmentXml = `<alignment horizontal="${style.align}"/>`;
+    if (style.align || style.wrapText) {
+      const horizontal = style.align ? `horizontal="${style.align}"` : "";
+      const wrap = style.wrapText ? `wrapText="1"` : "";
+      alignmentXml = `<alignment ${horizontal} ${wrap}/>`;
       applyAlignment = 1;
     }
 
     const xfId = this.cellXfs.length;
     this.cellXfs.push(
-      `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="0" xfId="0" applyFont="1" applyFill="${fillId > 0 ? 1 : 0}" applyAlignment="${applyAlignment}">${alignmentXml}</xf>`
+      `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1" applyFill="${fillId > 0 ? 1 : 0}" applyBorder="${borderId > 0 ? 1 : 0}" applyAlignment="${applyAlignment}">${alignmentXml}</xf>`
     );
 
     this.styleMap.set(styleKey, xfId);
@@ -139,6 +150,12 @@ export class WrdhrdExcelStream {
     for (let c = 0; c < cells.length; c++) {
       const cell = cells[c];
       if (!cell) continue;
+
+      const valStr = String(cell.value);
+      const currentMax = this.colWidths.get(c) || 0;
+      if (valStr.length > currentMax) {
+        this.colWidths.set(c, valStr.length);
+      }
 
       const ref = `${this.getColStr(c)}${this.currentRow}`;
       const styleId = this.registerStyle(cell.style || {});
@@ -197,12 +214,12 @@ export class WrdhrdExcelStream {
     );
 
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-            <fonts count="${this.fonts.length}">${this.fonts.join("")}</fonts>
-            <fills count="${this.fills.length}">${this.fills.join("")}</fills>
-            <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-            <cellXfs count="${this.cellXfs.length}">${this.cellXfs.join("")}</cellXfs>
-        </styleSheet>`;
+                          <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                              <fonts count="${this.fonts.length}">${this.fonts.join("")}</fonts>
+                              <fills count="${this.fills.length}">${this.fills.join("")}</fills>
+                              <borders count="${this.borders.length}">${this.borders.join("")}</borders>
+                              <cellXfs count="${this.cellXfs.length}">${this.cellXfs.join("")}</cellXfs>
+                          </styleSheet>`;
     this.archive.append(stylesXml, { name: "xl/styles.xml" });
   }
 
