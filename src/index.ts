@@ -189,6 +189,11 @@ export class WrdhrdExcelStream {
     this.currentMerges.push(`<mergeCell ref="${range}"/>`);
   }
 
+  public mergeRange(startCol: number, startRow: number, endCol: number, endRow: number): void {
+    const range = `${this.getColStr(startCol)}${startRow}:${this.getColStr(endCol)}${endRow}`;
+    this.merge(range);
+  }
+
   private writeGlobalMetadata(): void {
     let contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`;
     for (let i = 1; i <= this.sheets.length; i++) {
