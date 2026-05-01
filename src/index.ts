@@ -7,7 +7,8 @@ export interface CellStyle {
   fontSize?: number;
   color?: string;
   bgColor?: string;
-  align?: "left" | "center" | "right";
+  horizontal?: "left" | "center" | "right" | "fill" | "justify";
+  vertical?: "top" | "center" | "bottom" | "justify";
   wrapText?: boolean;
   border?: boolean;
 }
@@ -108,10 +109,12 @@ export class WrdhrdExcelStream {
 
     let alignmentXml = "";
     let applyAlignment = 0;
-    if (style.align || style.wrapText) {
-      const horizontal = style.align ? `horizontal="${style.align}"` : "";
+    if (style.horizontal || style.vertical || style.wrapText) {
+      const hAlign = style.horizontal ? `horizontal="${style.horizontal}"` : "";
+      const vAlign = style.vertical ? `vertical="${style.vertical}"` : `vertical="center"`;
       const wrap = style.wrapText ? `wrapText="1"` : "";
-      alignmentXml = `<alignment ${horizontal} ${wrap}/>`;
+
+      alignmentXml = `<alignment ${hAlign} ${vAlign} ${wrap}/>`;
       applyAlignment = 1;
     }
 
