@@ -190,8 +190,11 @@ export class WrdhrdExcelStream {
   }
 
   public mergeRange(startCol: number, startRow: number, endCol: number, endRow: number): void {
-    const range = `${this.getColStr(startCol)}${startRow}:${this.getColStr(endCol)}${endRow}`;
-    this.merge(range);
+    const sRow = startRow + 1;
+    const eRow = endRow + 1;
+
+    const range = `${this.getColStr(startCol)}${sRow}:${this.getColStr(endCol)}${eRow}`;
+    this.currentMerges.push(`<mergeCell ref="${range}"/>`);
   }
 
   private writeGlobalMetadata(): void {
