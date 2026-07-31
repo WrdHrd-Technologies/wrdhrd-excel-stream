@@ -1,13 +1,16 @@
 {
   "name": "@wrdhrd/excel-stream",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "wrdhrd's zero-memory-leak, multi-tab streaming Excel compiler.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "commonjs",
   "files": [
     "dist"
   ],
   "scripts": {
+    "clean": "node -e \"require('fs').rmSync('node_modules', { recursive: true, force: true })\"",
+    "prebuild": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc",
     "prepare": "npm run build"
   },
@@ -16,16 +19,23 @@
     "stream",
     "xlsx",
     "wrdhrd",
-    "backpressure"
+    "backpressure",
+    "openxml"
   ],
   "author": "WrdHrd Technologies Private Limited",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "archiver": "7.0.0"
+    "archiver": "^7.0.0"
   },
   "devDependencies": {
-    "@types/archiver": "6.0.2",
-    "@types/node": "20.0.0",
-    "typescript": "^5.0.0"
+    "@types/archiver": "^6.0.2",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
   }
 }
