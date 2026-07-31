@@ -1,73 +1,98 @@
+import { Writable } from "stream";
 import { XmlWriter } from "./XmlWriter";
-import { CellData, CellValue } from "./models/Cell";
 import { StyleManager } from "./StyleManager";
-import { SharedStringManager } from "./SharedStringManager";
-import { HyperlinkManager } from "./HyperlinkManager";
-import { RelationshipManager } from "./RelationshipManager";
-import { getColAlpha } from "./utils/columnName";
-import { toExcelDate } from "./utils/excelDate";
+import { CellInput, CellObject } from "./models/Cell";
+import { getCellReference } from "./utils/columnName";
+import { dateToExcelNumber } from "./utils/excelDate";
 
 export class RowWriter {
   private xmlWriter: XmlWriter;
+  private currentRowIndex = 0;
 
   constructor(
-    private stream: any,
-    private styleManager: StyleManager,
-    private sstManager: SharedStringManager,
-    private hyperlinkManager: HyperlinkManager,
-    private rels: RelationshipManager
+    private stream: Writable,
+    private styles: StyleManager
   ) {
     this.xmlWriter = new XmlWriter(this.stream);
   }
 
-  public writeRow(rowIndex: number, cells: Array<CellData | CellValue>): void {
-    this.xmlWriter.raw(`<row r="${rowIndex}">`);
+  public writeRow(cells: CellInput[]): boolean {
+    this.currentRowIndex++;
 
-    for (let c = 0; c < cells.length; c++) {
-      const cell = cells[c];
-      const ref = `${getColAlpha(c)}${rowIndex}`;
+    this.xmlWriter.startOpen("row").attribute("r", this.currentRowIndex).closeTag();
 
-      if (cell === null || cell === undefined) {
-        continue;
+    cells.forEach((cellInput, colZeroBasedIdx) => {
+      const colIndex = colZeroBasedIdx + 1;
+      const cellRef = getCellReference(colIndex, this.currentRowIndex);
+      const normalized = this.normalizeCellInput(cellInput);
+      this.writeCell(cellRef, normalized);
+    });
+
+    this.xmlWriter.end("row");
+    return this.stream.writableNeedDrain;
+  }
+
+  private normalizeCellInput(input: CellInput): CellObject {
+    if (input !== null && typeof input === "object" && !(input instanceof Date)) {
+      return input as CellObject;
+    }
+    return { value: input as any };
+  }
+
+  private writeCell(cellRef: string, cell: CellObject): void {
+    const { value, formula, style } = cell;
+
+    const styleIndex = typeof style === "number" ? style : 0;
+
+    this.xmlWriter.startOpen("c").attribute("r", cellRef);
+    if (styleIndex > 0) this.xmlWriter.attribute("s", styleIndex);
+
+    if (formula) {
+      this.xmlWriter.attribute("t", "str").closeTag();
+      this.xmlWriter.start("f").text(formula).end("f");
+      if (value !== undefined && value !== null) {
+        this.xmlWriter.start("v").text(String(value)).end("v");
       }
-
-      // Check if it's a raw literal primitive value or explicit config block
-      const isObject = typeof cell === "object" && !(cell instanceof Date) && !Array.isArray(cell);
-      const val = isObject ? (cell as CellData).value : cell;
-      const formula = isObject ? (cell as CellData).formula : undefined;
-      const hyperlink = isObject ? (cell as CellData).hyperlink : undefined;
-      const style = isObject ? (cell as CellData).style : undefined;
-
-      const styleId = style ? this.styleManager.getStyleStyleId(style) : 0;
-      const sAttr = styleId > 0 ? ` s="${styleId}"` : "";
-
-      if (hyperlink) {
-        this.hyperlinkManager.add(ref, hyperlink, this.rels);
-      }
-
-      if (formula) {
-        this.xmlWriter.raw(`<c r="${ref}"${sAttr} t="str"><f>${formula}</f></c>`);
-        continue;
-      }
-
-      if (val === null || val === undefined) {
-        this.xmlWriter.raw(`<c r="${ref}"${sAttr}/>`);
-      } else if (typeof val === "number") {
-        this.xmlWriter.raw(`<c r="${ref}"${sAttr}><v>${val}</v></c>`);
-      } else if (typeof val === "boolean") {
-        this.xmlWriter.raw(`<c r="${ref}"${sAttr} t="b"><v>${val ? 1 : 0}</v></c>`);
-      } else if (val instanceof Date) {
-        const dateStyleId = style
-          ? styleId
-          : this.styleManager.getStyleStyleId({ numFmt: "yyyy-mm-dd" });
-        this.xmlWriter.raw(`<c r="${ref}" s="${dateStyleId}"><v>${toExcelDate(val)}</v></c>`);
-      } else {
-        // Handle standard standard shared string transformations
-        const sstIdx = this.sstManager.getIndex(String(val));
-        this.xmlWriter.raw(`<c r="${ref}"${sAttr} t="s"><v>${sstIdx}</v></c>`);
-      }
+      this.xmlWriter.end("c");
+      return;
     }
 
-    this.xmlWriter.raw("</row>");
+    if (value === null || value === undefined) {
+      this.xmlWriter.selfClose();
+      return;
+    }
+
+    if (typeof value === "string") {
+      this.xmlWriter.attribute("t", "inlineStr").closeTag();
+      this.xmlWriter.start("is");
+      this.xmlWriter.startOpen("t");
+      if (value.startsWith(" ") || value.endsWith(" ")) {
+        this.xmlWriter.attribute("xml:space", "preserve");
+      }
+      this.xmlWriter.closeTag().text(value).end("t").end("is");
+    } else if (typeof value === "number") {
+      this.xmlWriter.closeTag();
+      this.xmlWriter.start("v").text(value).end("v");
+    } else if (typeof value === "boolean") {
+      this.xmlWriter.attribute("t", "b").closeTag();
+      this.xmlWriter
+        .start("v")
+        .text(value ? "1" : "0")
+        .end("v");
+    } else if (value instanceof Date) {
+      this.xmlWriter.closeTag();
+      const excelDate = dateToExcelNumber(value);
+      this.xmlWriter.start("v").text(excelDate).end("v");
+    }
+
+    this.xmlWriter.end("c");
+  }
+
+  public close(autoFilterRange?: string): void {
+    this.xmlWriter.end("sheetData");
+
+    if (autoFilterRange) {
+      this.xmlWriter.startOpen("autoFilter").attribute("ref", autoFilterRange).selfClose();
+    }
   }
 }

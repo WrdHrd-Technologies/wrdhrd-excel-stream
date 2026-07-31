@@ -1,32 +1,48 @@
-interface Relationship {
+import { XmlWriter } from "./XmlWriter";
+
+export interface Relationship {
   id: string;
   type: string;
   target: string;
-  targetMode?: "External" | "Internal";
+  targetMode?: "External";
 }
 
 export class RelationshipManager {
   private rels: Relationship[] = [];
   private counter = 1;
 
-  public add(type: string, target: string, targetMode?: "External" | "Internal"): string {
+  public registerRelationship(type: string, target: string, targetMode?: "External"): string {
     const id = `rId${this.counter++}`;
     this.rels.push({ id, type, target, targetMode });
     return id;
   }
 
-  public renderXml(): string {
-    let xml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-    for (const rel of this.rels) {
-      const modeAttr = rel.targetMode ? ` TargetMode="${rel.targetMode}"` : "";
-      xml += `<Relationship Id="${rel.id}" Type="${rel.type}" Target="${rel.target}"${modeAttr}/>`;
-    }
-    xml += "</Relationships>";
-    return xml;
-  }
+  public writeXml(writer: XmlWriter): void {
+    writer.raw('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
 
-  public get size(): number {
-    return this.rels.length;
+    // 1. Open the structural parent envelope using startOpen() to allow inline attributes
+    writer
+      .startOpen("Relationships")
+      .attribute("xmlns", "http://schemas.openxmlformats.org/package/2006/relationships")
+      .closeTag(); // Explicitly seal the opening tag bracket with '>'
+
+    for (const rel of this.rels) {
+      // 2. Open individual nodes using startOpen() to write attributes cleanly inline
+      writer
+        .startOpen("Relationship")
+        .attribute("Id", rel.id)
+        .attribute("Type", rel.type)
+        .attribute("Target", rel.target);
+
+      if (rel.targetMode) {
+        writer.attribute("TargetMode", rel.targetMode);
+      }
+
+      // 3. Since relationships do not contain nested children, render as a literal self-closing tag ' />'
+      writer.selfClose();
+    }
+
+    // 4. Terminate the complete collection envelope using the stateless literal end tag
+    writer.end("Relationships");
   }
 }

@@ -1,17 +1,14 @@
-export function getColAlpha(colIndex: number): string {
-  let str = "";
-  let temp = colIndex;
-  while (temp >= 0) {
-    str = String.fromCharCode((temp % 26) + 65) + str;
-    temp = Math.floor(temp / 26) - 1;
+export function getColumnName(index: number): string {
+  let name = "";
+  let idx = index;
+  while (idx > 0) {
+    const modulo = (idx - 1) % 26;
+    name = String.fromCharCode(65 + modulo) + name;
+    idx = Math.floor((idx - 1 - modulo) / 26);
   }
-  return str;
+  return name;
 }
 
-export function getColIndex(alpha: string): number {
-  let idx = 0;
-  for (let i = 0; i < alpha.length; i++) {
-    idx = idx * 26 + (alpha.charCodeAt(i) - 64);
-  }
-  return idx - 1;
+export function getCellReference(colIndex: number, rowIndex: number): string {
+  return `${getColumnName(colIndex)}${rowIndex}`;
 }

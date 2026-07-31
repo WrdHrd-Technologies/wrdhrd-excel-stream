@@ -1,36 +1,48 @@
-export interface FontStyle {
+export interface Font {
+  name?: string;
+  size?: number;
   bold?: boolean;
   italic?: boolean;
-  fontSize?: number;
-  color?: string;
-  name?: string;
+  color?: string; // AARRGGBB hex representation
+  family?: number;
+  scheme?: string;
 }
 
-export interface FillStyle {
-  type: "pattern" | "gradient";
+export interface Fill {
+  type: "pattern";
   patternType?: "none" | "solid" | "gray125" | "mediumGray";
-  fgColor?: string; // ARGB Hex format
-  bgColor?: string; // ARGB Hex format
+  foregroundColor?: string; // AARRGGBB hex
+  backgroundColor?: string; // AARRGGBB hex
 }
 
-export interface BorderSide {
-  style?: "none" | "thin" | "medium" | "dashed" | "dotted" | "thick" | "double";
-  color?: string; // ARGB Hex format
+export interface BorderDetail {
+  style?: "thin" | "medium" | "thick" | "dashed" | "dotted" | "double";
+  color?: string; // AARRGGBB hex
 }
 
-export interface BorderStyle {
-  top?: BorderSide;
-  bottom?: BorderSide;
-  left?: BorderSide;
-  right?: BorderSide;
+export interface Border {
+  left?: BorderDetail;
+  right?: BorderDetail;
+  top?: BorderDetail;
+  bottom?: BorderDetail;
+  diagonal?: BorderDetail;
 }
 
-export interface CellStyle {
-  font?: FontStyle;
-  fill?: FillStyle;
-  border?: BorderStyle;
-  numFmt?: string;
-  horizontalAlignment?: "left" | "center" | "right" | "fill" | "justify";
-  verticalAlignment?: "top" | "center" | "bottom" | "justify";
+export interface Alignment {
+  horizontal?: "left" | "center" | "right" | "justify";
+  vertical?: "top" | "center" | "bottom" | "justify";
   wrapText?: boolean;
+}
+
+/**
+ * Modern Unified CellStyle Interface
+ * Enforces production-grade structural properties while preserving
+ * seamless backward compatibility for flatter legacy formatting parameters.
+ */
+export interface CellStyle {
+  font?: Font;
+  fill?: Fill;
+  border?: Border;
+  alignment?: Alignment;
+  numberFormat?: string;
 }

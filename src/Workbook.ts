@@ -1,84 +1,162 @@
 import { Writable } from "stream";
 import { ZipWriter } from "./ZipWriter";
 import { StyleManager } from "./StyleManager";
-import { SharedStringManager } from "./SharedStringManager";
-import { Worksheet } from "./Worksheet";
 import { RelationshipManager } from "./RelationshipManager";
+import { Worksheet } from "./Worksheet";
+import { WorksheetOptions } from "./models/Cell";
+import { XmlWriter } from "./XmlWriter";
 
 export class Workbook {
   private zipWriter: ZipWriter;
-  private styleManager = new StyleManager();
-  private sstManager = new SharedStringManager();
-  private sheets: Worksheet[] = [];
+  public readonly styles = new StyleManager();
+  private worksheets: Worksheet[] = [];
   private globalRels = new RelationshipManager();
+  private workbookRels = new RelationshipManager();
+  private isCommitted = false;
 
   constructor(outputStream: Writable) {
     this.zipWriter = new ZipWriter(outputStream);
+    this.initializeGlobalRelationships();
   }
 
-  public addWorksheet(name: string): Worksheet {
-    const pt = this.zipWriter.appendStream(`xl/worksheets/sheet${this.sheets.length + 1}.xml`);
-    const sheet = new Worksheet(name, pt, this.styleManager, this.sstManager);
-    this.sheets.push(sheet);
+  private initializeGlobalRelationships(): void {
+    this.globalRels.registerRelationship(
+      "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+      "xl/workbook.xml"
+    );
+  }
 
-    this.globalRels.add(
+  public addWorksheet(name: string, options?: WorksheetOptions): Worksheet {
+    if (this.isCommitted) throw new Error("Cannot add worksheet; workbook has been committed.");
+    const sheetId = this.worksheets.length + 1;
+
+    this.workbookRels.registerRelationship(
       "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
-      `worksheets/sheet${this.sheets.length}.xml`
+      `worksheets/sheet${sheetId}.xml`
     );
 
-    sheet.beginWorksheetStream();
+    const sheetFactory = () =>
+      this.zipWriter.appendEntryStream(`xl/worksheets/sheet${sheetId}.xml`);
+    const sheet = new Worksheet(name, sheetId, sheetFactory, this.styles, options);
+    this.worksheets.push(sheet);
     return sheet;
   }
 
-  public async commit(): Promise<void> {
-    if (this.sheets.length === 0) {
-      throw new Error("Cannot finalize workbook generation with 0 attached worksheets.");
-    }
+  private writePromisifiedEntry(
+    zipPath: string,
+    writeFn: (writer: XmlWriter) => void
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const stream = this.zipWriter.appendEntryStream(zipPath);
+      const writer = new XmlWriter(stream);
 
-    for (const sheet of this.sheets) {
-      sheet.finalizeWorksheetStream();
-      if (sheet.rels.size > 0) {
-        this.zipWriter.appendBuffer(
-          `xl/worksheets/_rels/sheet${this.sheets.indexOf(sheet) + 1}.xml.rels`,
-          sheet.rels.renderXml()
-        );
+      try {
+        writeFn(writer);
+      } catch (err) {
+        stream.end();
+        return reject(err);
       }
+
+      stream.on("finish", () => resolve());
+      stream.on("error", (err) => reject(err));
+      stream.end();
+    });
+  }
+
+  public async commit(): Promise<void> {
+    if (this.isCommitted) return;
+
+    for (const sheet of this.worksheets) {
+      await sheet.end();
     }
 
-    this.zipWriter.appendBuffer("xl/styles.xml", this.styleManager.renderXml());
-    this.zipWriter.appendBuffer("xl/sharedStrings.xml", this.sstManager.renderXml());
-    this.zipWriter.appendBuffer("xl/_rels/workbook.xml.rels", this.globalRels.renderXml());
+    this.workbookRels.registerRelationship(
+      "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
+      "styles.xml"
+    );
 
-    this.writeWorkbookXml();
-    this.writeContentTypesXml();
-    this.writeRootRels();
+    await this.writePromisifiedEntry("_rels/.rels", (writer) => {
+      this.globalRels.writeXml(writer);
+    });
+
+    await this.writePromisifiedEntry("xl/_rels/workbook.xml.rels", (writer) => {
+      this.workbookRels.writeXml(writer);
+    });
+
+    await this.writePromisifiedEntry("xl/workbook.xml", (writer) => {
+      writer.raw('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
+      writer
+        .startOpen("workbook")
+        .attribute("xmlns", "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+        .attribute("xmlns:r", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+        .closeTag();
+
+      writer.start("sheets");
+      this.worksheets.forEach((sheet, index) => {
+        writer
+          .startOpen("sheet")
+          .attribute("name", sheet.name)
+          .attribute("sheetId", sheet.id)
+          .attribute("r:id", `rId${index + 1}`)
+          .selfClose();
+      });
+      writer.end("sheets").end("workbook");
+    });
+
+    await this.writePromisifiedEntry("xl/styles.xml", (writer) => {
+      this.styles.writeXml(writer);
+    });
+
+    await this.writePromisifiedEntry("[Content_Types].xml", (writer) => {
+      writer.raw('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
+      writer
+        .startOpen("Types")
+        .attribute("xmlns", "http://schemas.openxmlformats.org/package/2006/content-types")
+        .closeTag();
+
+      writer
+        .startOpen("Default")
+        .attribute("Extension", "rels")
+        .attribute("ContentType", "application/vnd.openxmlformats-package.relationships+xml")
+        .selfClose();
+      writer
+        .startOpen("Default")
+        .attribute("Extension", "xml")
+        .attribute("ContentType", "application/xml")
+        .selfClose();
+
+      writer
+        .startOpen("Override")
+        .attribute("PartName", "/xl/workbook.xml")
+        .attribute(
+          "ContentType",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+        )
+        .selfClose();
+      writer
+        .startOpen("Override")
+        .attribute("PartName", "/xl/styles.xml")
+        .attribute(
+          "ContentType",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"
+        )
+        .selfClose();
+
+      this.worksheets.forEach((sheet) => {
+        writer
+          .startOpen("Override")
+          .attribute("PartName", `/xl/worksheets/sheet${sheet.id}.xml`)
+          .attribute(
+            "ContentType",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+          )
+          .selfClose();
+      });
+
+      writer.end("Types");
+    });
 
     await this.zipWriter.finalize();
-  }
-
-  private writeWorkbookXml(): void {
-    let xml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>';
-    this.sheets.forEach((sheet, index) => {
-      xml += `<sheet name="${sheet.name}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`;
-    });
-    xml += "</sheets></workbook>";
-    this.zipWriter.appendBuffer("xl/workbook.xml", xml);
-  }
-
-  private writeContentTypesXml(): void {
-    let xml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedstrings+xml"/>';
-    this.sheets.forEach((_, index) => {
-      xml += `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`;
-    });
-    xml += "</Types>";
-    this.zipWriter.appendBuffer("[Content_Types].xml", xml);
-  }
-
-  private writeRootRels(): void {
-    const xml =
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
-    this.zipWriter.appendBuffer("_rels/.rels", xml);
+    this.isCommitted = true;
   }
 }
